@@ -1,0 +1,2081 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cost Calculator</title>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent: #8AD6A0;
+      --accent2: #4CAF70;
+      --bg: #f4f5f7;
+      --card: #fff;
+      --border: #e4e4e7;
+      --text: #18181b;
+      --muted: #71717a;
+      --danger: #ef4444;
+      --green: #10b981;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Top Nav ── */
+    .nav {
+      background: white;
+      border-bottom: 1px solid var(--border);
+      padding: 8px 16px;
+      min-height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-brand {
+      font-weight: 800;
+      font-size: 1.05rem;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+    .nav-brand svg { width: 20px; height: 20px; }
+    .nav-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+    /* ── Buttons ── */
+    .btn {
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, background 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn:hover { opacity: 0.88; }
+    .btn-primary { background: var(--accent); color: #1a4a2e; }
+    .btn-ghost { background: var(--bg); color: var(--text); border: 1.5px solid var(--border); }
+    .btn-danger { background: #fef2f2; color: var(--danger); border: 1.5px solid #fecaca; }
+    .btn-sm { padding: 5px 11px; font-size: 0.8rem; border-radius: 6px; }
+
+    /* ── Page wrapper ── */
+    .page { display: none; padding: 28px 24px 64px; max-width: 1100px; margin: 0 auto; }
+    .page.active { display: block; }
+
+    /* ── Dashboard ── */
+    .dash-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .dash-header h2 { font-size: 1.3rem; font-weight: 800; }
+    .dash-header p { color: var(--muted); font-size: 0.85rem; margin-top: 2px; }
+
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .product-card {
+      background: white;
+      border-radius: 14px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+      padding: 20px;
+      cursor: pointer;
+      transition: box-shadow 0.15s, transform 0.15s;
+      border: 1.5px solid transparent;
+    }
+    .product-card:hover {
+      box-shadow: 0 6px 20px rgba(138,214,160,0.2);
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+    .product-card .icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+      margin-bottom: 12px;
+    }
+    .product-card h3 { font-size: 1rem; font-weight: 700; margin-bottom: 12px; }
+    .product-card .stat-row {
+      display: flex; flex-direction: column; gap: 6px;
+    }
+    .product-card .stat {
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.82rem;
+    }
+    .product-card .stat .stat-label { color: var(--muted); }
+    .product-card .stat .stat-value { font-weight: 700; }
+    .product-card .cost-big {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .product-card .chip {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: #f0fdf4;
+      color: var(--green);
+      margin-top: 8px;
+    }
+
+    /* List view */
+    .product-list { display: flex; flex-direction: column; gap: 0; background: white; border-radius: 14px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); overflow: hidden; }
+    .product-list-row {
+      display: grid;
+      grid-template-columns: 32px 1fr 90px 90px 90px 80px;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.12s;
+      font-size: 0.88rem;
+    }
+    .product-list-row:last-child { border-bottom: none; }
+    .product-list-row:hover { background: #f9f9ff; }
+    .product-list-row.header {
+      font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--muted);
+      cursor: default; background: var(--bg); padding: 8px 18px;
+    }
+    .product-list-row.header:hover { background: var(--bg); }
+    .product-list-row .pname { font-weight: 600; }
+    .product-list-row .pcost { font-weight: 700; color: var(--accent); text-align: right; }
+    .product-list-row .psell { font-weight: 600; color: var(--green); text-align: right; }
+    .product-list-row .pnum  { text-align: right; color: var(--muted); }
+
+    .add-card {
+      background: white;
+      border-radius: 14px;
+      border: 2px dashed #d1d5db;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      min-height: 180px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .add-card:hover { border-color: var(--accent); color: var(--accent); }
+    .add-card .plus { font-size: 1.8rem; line-height: 1; }
+
+    /* ── Product Editor ── */
+    .editor-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 20px;
+      background: white;
+      border-radius: 14px;
+      padding: 16px 20px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    }
+    .editor-header input.name-input {
+      flex: 1;
+      font-size: 1.3rem;
+      font-weight: 800;
+      border: none;
+      border-bottom: 2.5px solid transparent;
+      border-radius: 0;
+      padding: 2px 4px;
+      outline: none;
+      background: transparent;
+      color: var(--accent);
+      transition: border-color 0.15s;
+      min-width: 0;
+    }
+    .editor-header input.name-input::placeholder { color: #7abf91; }
+    .editor-header input.name-input:focus { border-bottom-color: var(--accent); }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 24px;
+      background: white;
+      padding: 5px;
+      border-radius: 12px;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.07);
+    }
+    .tab {
+      flex: 1;
+      padding: 10px 12px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: 8px;
+      text-align: center;
+      transition: all 0.18s;
+      border-bottom: none;
+      margin-bottom: 0;
+    }
+    .tab:hover:not(.active) { background: var(--bg); color: var(--text); }
+    .tab.active {
+      color: #1a4a2e;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      box-shadow: 0 3px 10px rgba(76,175,112,0.3);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Editor grid */
+    .editor-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 700px) { .editor-grid { grid-template-columns: 1fr; } }
+
+    /* ── Mobile / Tablet responsive ── */
+    @media (max-width: 900px) {
+      .rm-head  { grid-template-columns: 1.5fr 60px 92px 68px 30px; }
+      .rm-row   { grid-template-columns: 1.5fr 60px 92px 68px 30px; }
+      .rm-head  span:nth-child(3),
+      .rm-row   > *:nth-child(3) { display: none; } /* hide Buy As col */
+    }
+
+    @media (max-width: 640px) {
+      .page { padding: 16px 12px 80px; }
+
+      /* Nav */
+      .nav { padding: 8px 12px; gap: 6px; }
+      .btn-sm { padding: 6px 10px; font-size: 0.78rem; }
+
+      /* Tabs */
+      .tab { padding: 8px 6px; font-size: 0.78rem; }
+
+      /* Dashboard product cards */
+      .product-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+
+      /* Dashboard list — show emoji, name, cost only */
+      .product-list-row { grid-template-columns: 28px 1fr 72px; gap: 8px; padding: 10px 12px; }
+      .product-list-row .pnum,
+      .product-list-row .psell { display: none; }
+      .product-list-row.header span:nth-child(4),
+      .product-list-row.header span:nth-child(5),
+      .product-list-row.header span:nth-child(6) { display: none; }
+
+      /* Prices page */
+      .price-grid        { grid-template-columns: 1.5fr 90px 80px; }
+      .price-grid-head   { grid-template-columns: 1.5fr 90px 80px; }
+      .price-grid-head.admin-cols { grid-template-columns: 1.5fr 90px 80px 28px; }
+      .price-row         { grid-template-columns: 1.5fr 90px 80px; }
+      .price-row.admin-cols { grid-template-columns: 1.5fr 90px 80px 28px; }
+      /* hide Qty/Pack column on mobile prices page */
+      .price-grid-head span:nth-child(2),
+      .price-row > *:nth-child(2) { display: none; }
+
+      /* Materials page */
+      .rm-head  { grid-template-columns: 1fr 88px 30px; }
+      .rm-row   { grid-template-columns: 1fr 88px 30px; }
+      .rm-head  span:nth-child(2),
+      .rm-head  span:nth-child(3),
+      .rm-head  span:nth-child(4),
+      .rm-row   > *:nth-child(2),
+      .rm-row   > *:nth-child(3),
+      .rm-row   > *:nth-child(4) { display: none; }
+
+      /* BOM rows */
+      .bom-head { grid-template-columns: 1fr 72px 68px 28px; }
+      .bom-row  { grid-template-columns: 1fr 72px 68px 28px; }
+
+      /* Dialogs full width */
+      .dialog { max-width: calc(100vw - 24px) !important; margin: 12px; border-radius: 16px; }
+
+      /* Result tiles */
+      .tiles { gap: 8px; }
+      .tile { padding: 12px; }
+      .tile .t-value { font-size: 1.2rem; }
+    }
+
+    @media (max-width: 400px) {
+      .product-grid { grid-template-columns: 1fr; }
+    }
+
+    .section {
+      background: white;
+      border-radius: 14px;
+      padding: 20px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+      border-top: 3px solid var(--accent);
+    }
+    .section.full { grid-column: 1 / -1; }
+
+    .section-title {
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--accent);
+      margin-bottom: 4px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .section-desc {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+
+    /* Table rows */
+    .col-head {
+      display: grid;
+      gap: 6px;
+      padding-bottom: 6px;
+      border-bottom: 1.5px solid var(--border);
+      margin-bottom: 8px;
+    }
+    .col-head span {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+      color: var(--muted);
+    }
+
+    /* Materials page: Name | Recipe Unit | Buy As | Qty/Purchase | Price/Purchase | $/Unit auto | × */
+    .rm-head  { grid-template-columns: 1.5fr 52px 60px 52px 92px 70px 30px; }
+    .rm-row   { grid-template-columns: 1.5fr 52px 60px 52px 92px 70px 30px; display: grid; gap: 6px; align-items: center; margin-bottom: 6px; }
+    /* Costs tab compact: Name | Purchase summary | Price ($) | $/Unit auto | × */
+    .rm-compact-head { grid-template-columns: 1fr 118px 88px 68px 30px; }
+    .rm-compact-row  { grid-template-columns: 1fr 118px 88px 68px 30px; display: grid; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .bom-head { grid-template-columns: 1fr 80px 76px 30px; }
+    .bom-row  { grid-template-columns: 1fr 80px 76px 30px; display: grid; gap: 6px; align-items: center; margin-bottom: 6px; }
+    .oc-head  { grid-template-columns: 1fr 100px 30px; }
+    .oc-row   { grid-template-columns: 1fr 100px 30px; display: grid; gap: 6px; align-items: center; margin-bottom: 6px; }
+
+    input[type="text"], input[type="number"], select {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1.5px solid var(--border);
+      border-radius: 7px;
+      font-size: 0.85rem;
+      outline: none;
+      background: white;
+      color: var(--text);
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+    input[type="number"] { text-align: right; }
+    input.ro { background: #f9fafb; color: var(--muted); }
+
+    .btn-x {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #d1d5db;
+      font-size: 1.05rem;
+      padding: 3px 5px;
+      border-radius: 5px;
+      transition: color 0.12s, background 0.12s;
+    }
+    .btn-x:hover { color: var(--danger); background: #fef2f2; }
+
+    .btn-add-row {
+      width: 100%;
+      background: none;
+      border: 1.5px dashed #d1d5db;
+      border-radius: 7px;
+      padding: 7px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      cursor: pointer;
+      margin-top: 4px;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-add-row:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* Settings row */
+    .settings-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .field label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      margin-bottom: 5px;
+    }
+
+    /* Results */
+    .result-tiles {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .tile {
+      background: var(--bg);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .tile.main {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+    }
+    .tile .t-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .tile.main .t-label { color: rgba(26,74,46,0.75); }
+    .tile .t-value { font-size: 1.5rem; font-weight: 800; color: var(--text); }
+    .tile.main .t-value { color: #1a4a2e; }
+
+    .breakdown-tbl {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.83rem;
+    }
+    .breakdown-tbl th {
+      text-align: left;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      padding: 4px 8px 8px;
+      border-bottom: 1.5px solid var(--border);
+    }
+    .breakdown-tbl th:last-child { text-align: right; }
+    .breakdown-tbl td {
+      padding: 6px 8px;
+      border-bottom: 1px solid #f4f4f5;
+      color: #3f3f46;
+    }
+    .breakdown-tbl td:last-child { text-align: right; font-weight: 600; }
+    .breakdown-tbl .sub td { font-weight: 700; color: var(--text); background: var(--bg); }
+    .breakdown-tbl .grand td { font-weight: 800; color: var(--accent); border-bottom: none; font-size: 0.9rem; padding-top: 10px; }
+    .breakdown-tbl .section-label td {
+      padding: 10px 8px 4px;
+      font-weight: 700;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      background: none;
+    }
+
+    .empty { text-align: center; color: var(--muted); font-size: 0.83rem; padding: 14px 0 6px; }
+
+    /* Materials page */
+    .mat-page-head {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;
+    }
+
+    /* Cloud sync */
+    .sync-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; }
+    .sync-dot.synced  { background:#10b981; }
+    .sync-dot.syncing { background:#f59e0b; animation:pulse .8s infinite; }
+    .sync-dot.error   { background:#ef4444; }
+    .sync-dot.offline { background:#d1d5db; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .setup-steps { counter-reset:step; }
+    .setup-step { display:flex; gap:14px; margin-bottom:20px; align-items:flex-start; }
+    .setup-step::before { counter-increment:step; content:counter(step); min-width:26px; height:26px; background:var(--accent); color:#1a4a2e; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:.78rem; font-weight:800; margin-top:2px; }
+    .setup-step-body { flex:1; }
+    .setup-step-body strong { display:block; font-size:.9rem; margin-bottom:4px; }
+    .setup-step-body p { font-size:.82rem; color:var(--muted); margin-bottom:8px; }
+    .setup-step-body a { color:var(--accent); font-weight:600; }
+    .code-hint { background:#f4f5f7; border-radius:6px; padding:6px 10px; font-family:monospace; font-size:.78rem; color:#3f3f46; margin-top:4px; word-break:break-all; }
+    textarea.config-input { width:100%; min-height:90px; resize:vertical; font-family:monospace; font-size:.78rem; }
+
+    /* Delete confirm overlay */
+    .overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.35);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .overlay.show { display: flex; }
+    .dialog {
+      background: white;
+      border-radius: 14px;
+      padding: 28px;
+      max-width: 360px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    }
+    .dialog h3 { font-size: 1rem; font-weight: 700; margin-bottom: 8px; }
+    .dialog p { font-size: 0.88rem; color: var(--muted); margin-bottom: 20px; }
+    .dialog-btns { display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* Mode banner */
+    .mode-banner {
+      display: none;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #1a4a2e;
+      font-size: .8rem;
+      font-weight: 700;
+      text-align: center;
+      padding: 5px;
+      letter-spacing: .04em;
+    }
+    .mode-banner.employee { display:block; background:#059669; }
+    .mode-banner.admin    { display:block; background:linear-gradient(135deg,#d97706,#b45309); }
+
+    /* Employee price update page */
+    .price-grid {
+      display: grid;
+      grid-template-columns: 1.5fr 120px 100px 80px;
+      gap: 6px;
+    }
+    .price-grid-head { grid-template-columns: 1.5fr 90px 100px 90px; }
+    .price-grid-head.admin-cols { grid-template-columns: 1.5fr 90px 100px 90px 28px; }
+    .price-row { display: grid; grid-template-columns: 1.5fr 90px 100px 90px; gap: 6px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); }
+    .price-row.admin-cols { grid-template-columns: 1.5fr 90px 100px 90px 28px; }
+    .price-row:last-child { border-bottom: none; }
+    .price-cat-header {
+      margin: 20px 0 6px;
+      font-size: .7rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      padding: 4px 10px;
+      border-radius: 6px;
+      display: inline-block;
+    }
+    .price-cat-header.cat-meat       { background:#fee2e2; color:#b91c1c; }
+    .price-cat-header.cat-produce    { background:#dcfce7; color:#15803d; }
+    .price-cat-header.cat-dairy      { background:#dbeafe; color:#1d4ed8; }
+    .price-cat-header.cat-dry        { background:#fef9c3; color:#a16207; }
+    .price-cat-header.cat-can        { background:#f3e8ff; color:#7e22ce; }
+    .price-cat-header.cat-containers { background:#f1f5f9; color:#475569; }
+    .price-cat-header.cat-other      { background:#f4f4f5; color:#52525b; }
+
+    /* PIN pad */
+    .pin-display { font-size:2rem; letter-spacing:.5rem; text-align:center; padding:12px; font-family:monospace; color:var(--text); min-height:56px; }
+    .pin-pad { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:12px; }
+    .pin-btn { padding:14px; font-size:1.1rem; font-weight:700; border:1.5px solid var(--border); border-radius:10px; background:white; cursor:pointer; transition:background .1s; }
+    .pin-btn:hover { background:var(--bg); }
+    .pin-btn.wide { grid-column:span 2; }
+    .pin-err { color:var(--danger); font-size:.85rem; text-align:center; margin-top:8px; min-height:20px; }
+  </style>
+</head>
+<body>
+
+<!-- Mode banner -->
+<div class="mode-banner" id="mode-banner"></div>
+
+<!-- Nav -->
+<nav class="nav">
+  <div class="nav-brand" onclick="showPage('dashboard')" style="cursor:pointer">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-1.5 7h12L16 13"/></svg>
+    Cost Calculator
+  </div>
+  <div class="nav-right" id="nav-right"><!-- rendered by renderNav() --></div>
+</nav>
+
+<!-- EMPLOYEE: Update Prices -->
+<div class="page" id="page-prices">
+  <div class="dash-header">
+    <div>
+      <h2>Update Ingredient Prices</h2>
+      <p>Enter what you paid per purchase unit when a delivery arrives. Costs update automatically.</p>
+    </div>
+    <span id="prices-saved" style="font-size:.82rem;font-weight:600;color:var(--green);display:none">✓ Saved</span>
+  </div>
+  <div style="background:white;border-radius:12px;padding:20px;box-shadow:0 1px 6px rgba(0,0,0,.05)">
+    <div id="price-grid-head" class="col-head price-grid-head" style="display:grid;gap:6px;position:sticky;z-index:50;
+      background:linear-gradient(135deg,var(--accent),var(--accent2));
+      border-radius:10px;padding:10px 14px;margin-bottom:10px;
+      box-shadow:0 4px 12px rgba(76,175,112,0.25);">
+      <span style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#1a4a2e">Material</span>
+      <span style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#1a4a2e;text-align:right">Qty / Pack</span>
+      <span style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#1a4a2e;text-align:right">Price Paid ($)</span>
+      <span style="font-size:.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#1a4a2e;text-align:right">Cost / Unit</span>
+    </div>
+    <div id="price-rows"></div>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="page active" id="page-dashboard">
+  <div class="dash-header">
+    <div>
+      <h2>Your Products <span id="dash-count" style="font-size:0.9rem;font-weight:500;color:var(--muted)"></span></h2>
+      <p>Click a product to view and edit its recipe and costs.</p>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-ghost btn-sm" id="view-toggle" onclick="toggleView()">☰ List View</button>
+    </div>
+  </div>
+  <div id="product-grid"></div>
+</div>
+
+<!-- MATERIALS -->
+<div class="page" id="page-materials">
+  <div class="mat-page-head">
+    <div>
+      <h2 style="font-size:1.2rem;font-weight:800">Raw Materials Library</h2>
+      <p style="color:var(--muted);font-size:0.85rem;margin-top:2px">Shared across all products. Update prices here to recalculate everything.</p>
+    </div>
+    <button class="btn btn-ghost btn-sm" onclick="showPage('dashboard')">← Back</button>
+  </div>
+
+  <div style="background:white;border-radius:12px;padding:20px;box-shadow:0 1px 6px rgba(0,0,0,0.05)">
+    <div class="col-head rm-head">
+      <span>Material Name</span><span>Recipe Unit</span><span>Buy As</span><span style="text-align:right">Qty</span><span style="text-align:right">Price / Purchase ($)</span><span style="text-align:right">Cost / Unit</span><span></span>
+    </div>
+    <div id="mat-rows"></div>
+    <button class="btn-add-row" onclick="addMaterial()">+ Add material</button>
+  </div>
+</div>
+
+<!-- PRODUCT EDITOR -->
+<div class="page" id="page-editor">
+  <div class="editor-header">
+    <button class="btn btn-ghost btn-sm" onclick="saveAndBack()">← Back</button>
+    <input class="name-input" id="prod-name" type="text" placeholder="Product name…" oninput="currentProduct().name=this.value; saveData()" />
+    <button class="btn btn-danger btn-sm" onclick="confirmDelete()">Delete</button>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('recipe')">🧪 Recipe</div>
+    <div class="tab" onclick="switchTab('costs')">💰 Material Costs &amp; Other</div>
+    <div class="tab" onclick="switchTab('results')">📊 Results</div>
+  </div>
+
+  <!-- Recipe tab -->
+  <div class="tab-panel active" id="tab-recipe">
+    <div class="editor-grid">
+      <div class="section full">
+        <div class="section-title">Bill of Materials — Quantities for one full batch</div>
+        <div class="section-desc">Enter how much of each material is needed to make one complete batch. The app divides the total by your batch size to get the cost per unit.</div>
+        <div class="col-head bom-head" style="background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:8px;padding:8px 12px;margin-bottom:10px;border:none">
+          <span style="color:#1a4a2e;font-weight:800;font-size:.7rem;letter-spacing:.07em;text-transform:uppercase">Ingredient</span>
+          <span style="color:#1a4a2e;font-weight:800;font-size:.7rem;letter-spacing:.07em;text-transform:uppercase;text-align:right">Qty / Batch</span>
+          <span style="color:#1a4a2e;font-weight:800;font-size:.7rem;letter-spacing:.07em;text-transform:uppercase;text-align:right">Batch Cost</span>
+          <span></span>
+        </div>
+        <div id="bom-rows"></div>
+        <button class="btn-add-row" onclick="addBomRow()">+ Add ingredient</button>
+      </div>
+      <div class="section" style="border-top-color:#10b981">
+        <div class="section-title" style="color:#10b981">📦 Batch Size</div>
+        <div class="section-desc">How many finished units does one batch produce? Costs are divided by this number.</div>
+        <div class="field">
+          <label>Units per batch</label>
+          <input type="number" id="prod-qty" min="1" value="40"
+            style="font-size:1.4rem;font-weight:800;text-align:center;border-color:#10b981;color:#10b981;padding:10px"
+            oninput="currentProduct().batchSize=+this.value||1; recalc()" />
+        </div>
+      </div>
+      <div class="section" style="border-top-color:#f59e0b">
+        <div class="section-title" style="color:#f59e0b">🎯 Target Margin</div>
+        <div class="section-desc">Used to suggest a sell price on the Results tab.</div>
+        <div class="field">
+          <label>Margin %</label>
+          <input type="number" id="prod-margin" min="0" max="99" value="30"
+            style="font-size:1.4rem;font-weight:800;text-align:center;border-color:#f59e0b;color:#f59e0b;padding:10px"
+            oninput="currentProduct().margin=+this.value||0; recalc()" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Costs tab -->
+  <div class="tab-panel" id="tab-costs">
+    <div class="editor-grid">
+      <div class="section">
+        <div class="section-title">Raw Material Prices</div>
+        <div class="section-desc">Update the cost per unit for each material. Changes apply to all products.</div>
+        <div class="col-head rm-compact-head">
+          <span>Material</span><span>Purchase Size</span><span style="text-align:right">Price / Purchase ($)</span><span style="text-align:right">Cost / Unit</span><span></span>
+        </div>
+        <div id="inline-mat-rows"></div>
+        <button class="btn-add-row" onclick="addMaterialInline()">+ Add material</button>
+      </div>
+      <div class="section">
+        <div class="section-title">Other Costs Per Batch</div>
+        <div class="section-desc">Labor, packaging, labels, shipping. Divided by batch size for per-unit cost.</div>
+        <div class="col-head oc-head">
+          <span>Description</span><span style="text-align:right">Amount ($)</span><span></span>
+        </div>
+        <div id="oc-rows"></div>
+        <button class="btn-add-row" onclick="addOtherCost()">+ Add cost</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results tab -->
+  <div class="tab-panel" id="tab-results">
+    <div class="section full" style="max-width:700px">
+      <div class="result-tiles" id="result-tiles">
+        <div class="tile main"><div class="t-label">Cost Calculator</div><div class="t-value" id="r-cost">$—</div></div>
+        <div class="tile"><div class="t-label">Materials</div><div class="t-value" id="r-mat">$—</div></div>
+        <div class="tile"><div class="t-label">Other Costs</div><div class="t-value" id="r-other">$—</div></div>
+        <div class="tile"><div class="t-label">Sell Price</div><div class="t-value" id="r-sell">$—</div></div>
+      </div>
+      <div id="breakdown-wrap"></div>
+    </div>
+  </div>
+</div>
+
+<!-- PIN Modal -->
+<div class="overlay" id="pin-overlay">
+  <div class="dialog" style="max-width:300px">
+    <h3 style="text-align:center;margin-bottom:4px">Admin Access</h3>
+    <p style="text-align:center;margin-bottom:0">Enter your PIN to unlock full access</p>
+    <div class="pin-display" id="pin-display">––––––</div>
+    <div class="pin-pad">
+      <button class="pin-btn" onclick="pinKey('1')">1</button>
+      <button class="pin-btn" onclick="pinKey('2')">2</button>
+      <button class="pin-btn" onclick="pinKey('3')">3</button>
+      <button class="pin-btn" onclick="pinKey('4')">4</button>
+      <button class="pin-btn" onclick="pinKey('5')">5</button>
+      <button class="pin-btn" onclick="pinKey('6')">6</button>
+      <button class="pin-btn" onclick="pinKey('7')">7</button>
+      <button class="pin-btn" onclick="pinKey('8')">8</button>
+      <button class="pin-btn" onclick="pinKey('9')">9</button>
+      <button class="pin-btn" onclick="pinKey('back')">⌫</button>
+      <button class="pin-btn" onclick="pinKey('0')">0</button>
+      <button class="pin-btn" onclick="pinKey('clear')">✕</button>
+    </div>
+    <div class="pin-err" id="pin-err"></div>
+    <div style="text-align:center;margin-top:8px">
+      <button class="btn btn-ghost btn-sm" onclick="closePinModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Change PIN Modal -->
+<div class="overlay" id="change-pin-overlay">
+  <div class="dialog" style="max-width:320px">
+    <h3 style="margin-bottom:8px">Change Admin PIN</h3>
+    <p>Choose a 6-digit PIN for admin access.</p>
+    <div style="display:flex;gap:10px;margin-bottom:16px;align-items:center">
+      <input type="password" id="new-pin-input" maxlength="6" placeholder="New PIN" style="width:150px;font-size:1.2rem;letter-spacing:.3rem;text-align:center" oninput="this.value=this.value.replace(/\D/g,'')" />
+    </div>
+    <div id="pin-change-err" style="color:var(--danger);font-size:.82rem;margin-bottom:10px;display:none"></div>
+    <div class="dialog-btns">
+      <button class="btn btn-ghost" onclick="el('change-pin-overlay').classList.remove('show')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveNewPin()">Save PIN</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cloud Setup Modal -->
+<div class="overlay" id="cloud-overlay">
+  <div class="dialog" style="max-width:520px;max-height:90vh;overflow-y:auto">
+    <h3 style="margin-bottom:6px">☁️ Connect Cloud Sync</h3>
+    <p style="margin-bottom:20px">Sync your data across every device in real time using Firebase — free for small businesses.</p>
+    <div class="setup-steps">
+      <div class="setup-step">
+        <div class="setup-step-body">
+          <strong>Create a free Firebase project</strong>
+          <p>Go to <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a>, click <em>Add project</em>, give it a name, and finish setup.</p>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-step-body">
+          <strong>Create a Realtime Database</strong>
+          <p>In your project, go to <em>Build → Realtime Database → Create database</em>. Choose <em>Start in test mode</em>.</p>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-step-body">
+          <strong>Get your Firebase config</strong>
+          <p>Go to <em>Project Settings (gear icon) → Your apps → Add app → Web</em>. Register the app, then copy the <code>firebaseConfig</code> object and paste it below.</p>
+          <div class="code-hint">{ apiKey: "...", authDomain: "...", databaseURL: "...", ... }</div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="display:block;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px">Paste Firebase Config (JSON)</label>
+      <textarea class="config-input" id="firebase-config-input" placeholder='{ "apiKey": "...", "databaseURL": "https://your-project-default-rtdb.firebaseio.com", ... }'></textarea>
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="display:block;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px">Workspace ID <span style="font-weight:400;text-transform:none">(acts as a password — use the same ID on all your devices)</span></label>
+      <input type="text" id="firebase-workspace" placeholder="e.g. my-business-2024" style="max-width:280px" />
+    </div>
+    <div id="cloud-error" style="color:var(--danger);font-size:.83rem;margin-bottom:12px;display:none"></div>
+    <div class="dialog-btns">
+      <button class="btn btn-ghost" onclick="closeCloudSetup()">Cancel</button>
+      <button class="btn btn-danger btn-sm" id="disconnect-btn" onclick="disconnectCloud()" style="display:none">Disconnect</button>
+      <button class="btn btn-primary" onclick="connectCloud()">Connect &amp; Sync</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete confirm dialog -->
+<div class="overlay" id="delete-overlay">
+  <div class="dialog">
+    <h3>Delete this product?</h3>
+    <p>This will permanently remove the product and its recipe. This cannot be undone.</p>
+    <div class="dialog-btns">
+      <button class="btn btn-ghost" onclick="closeOverlay()">Cancel</button>
+      <button class="btn btn-danger" onclick="deleteProduct()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Data ───────────────────────────────────────────────
+function uid() { return Math.random().toString(36).slice(2, 9); }
+
+const DATA_VERSION = 5;
+
+function defaultData() {
+  // Build material ID map
+  const m = {};
+  const matList = [
+    // key, name, recipeUnit, purchaseUnit, purchaseQty, qtyOptions, category
+    // ── Meat ──
+    ["chicken",    "Boneless Chicken Breast","lb",  "case",      "",    null,        "Meat"],
+    ["pork",       "Boneless Cushion Pork","lb",   "case",      "",    null,        "Meat"],
+    ["gbeef",      "Ground Beef",         "lb",    "case",      "",    null,        "Meat"],
+    ["bknuckle",   "Beef Knuckle",        "lb",    "case",      "",    null,        "Meat"],
+    // ── Produce ──
+    ["tomato",     "Roma Tomatoes",       "lb",    "box",       "25",  null,        "Produce"],
+    ["cilantro",   "Cilantro",            "lb",    "case",      "25",  null,        "Produce"],
+    ["tomatillo",  "Green Tomatillos",    "lb",    "bag",       "35",  null,        "Produce"],
+    ["onion",      "White Onions",        "lb",    "bushel",    "50",  null,        "Produce"],
+    ["lemon",      "Lemon Juice",         "oz",    "case",      "512", null,        "Produce"],
+    ["avocado",    "Avocados",            "each",  "flat",      "48",  ["48","60"], "Produce"],
+    ["jalapeno",   "Jalapeño",            "lb",    "case",      "",    null,        "Produce"],
+    ["habanero",   "Habanero Pepper",     "lb",    "case",      "",    null,        "Produce"],
+    ["poblano",    "Poblano Pepper",      "lb",    "case",      "",    null,        "Produce"],
+    ["garlic",     "Garlic",              "lb",    "case",      "20",  null,        "Produce"],
+    ["potato",     "Potatoes",            "lb",    "bag",       "",    null,        "Produce"],
+    ["pineapple",  "Pineapple",           "each",  "case",      "",    null,        "Produce"],
+    ["ppear",      "Prickly Pear",        "lb",    "lb",        "1",   null,        "Produce"],
+    // ── Dairy ──
+    ["cheese",     "American Cheese",     "lb",    "block",     "",    null,        "Dairy"],
+    ["scream",     "Sour Cream",          "oz",    "container", "",    null,        "Dairy"],
+    ["milk",       "Whole Milk",          "oz",    "gal",       "128", null,        "Dairy"],
+    ["eggs",       "Eggs",                "each",  "case",      "144", null,        "Meat"],
+    // ── Dry Product ──
+    ["salt",       "Sea Salt",            "lb",    "bag",       "50",  null,        "Dry Product"],
+    ["rice",       "Long Grain Rice",     "lb",    "bag",       "",    null,        "Dry Product"],
+    ["cumin",      "Cumin",               "g",     "lb",        "453", null,        "Dry Product"],
+    ["paprika",    "Paprika Pepper",      "g",     "lb",        "453", null,        "Dry Product"],
+    ["bpepper",    "Black Pepper",        "g",     "lb",        "453", null,        "Dry Product"],
+    ["gpowder",    "Garlic Powder",       "g",     "lb",        "453", null,        "Dry Product"],
+    ["gsalt",      "Garlic Salt",         "g",     "lb",        "453", null,        "Dry Product"],
+    ["pinto",      "Pinto Beans",         "lb",    "bag",       "",    null,        "Dry Product"],
+    ["masa",       "Masa Harina",         "lb",    "bag",       "",    null,        "Dry Product"],
+    ["chiles",     "Dried Chiles",        "oz",    "bag",       "",    null,        "Dry Product"],
+    ["husks",      "Corn Husks",          "each",  "bag",       "",    null,        "Dry Product"],
+    ["blackbean",  "Black Beans",         "lb",    "bag",       "",    null,        "Dry Product"],
+    ["tortilla",   "Flour Tortillas",     "each",  "case",      "",    null,        "Dry Product"],
+    ["lentils",    "Lentils",             "lb",    "bag",       "",    null,        "Dry Product"],
+    ["hibiscus",   "Dried Hibiscus",      "lb",    "lb",        "1",   null,        "Dry Product"],
+    ["sugar",      "Sugar",               "lb",    "bag",       "",    null,        "Dry Product"],
+    // ── Can Goods ──
+    ["cbroth",     "Chicken Broth",       "oz",    "case",      "",    null,        "Can Goods"],
+    ["tpaste",     "Tomato Puree",        "oz",    "case",      "",    null,        "Can Goods"],
+    ["chipotle",   "Chipotle Peppers",    "oz",    "bag",       "",    null,        "Dry Product"],
+    ["pasilla",    "Pasilla Pepper",      "lb",    "lb",        "1",   null,        "Dry Product"],
+    ["guajillo",   "Guajillo Pepper",     "lb",    "lb",        "1",   null,        "Dry Product"],
+    ["arbol",      "Chile Arbol Pepper",  "lb",    "lb",        "1",   null,        "Dry Product"],
+    ["hominy",     "Hominy Corn",         "oz",    "case",      "",    null,        "Can Goods"],
+    ["garbanzo",   "Garbanzo Bean",       "lb",    "case",      "",    null,        "Can Goods"],
+  ];
+  matList.forEach(([key]) => { m[key] = uid(); });
+
+  const materials = matList.map(([key, name, recipeUnit, purchaseUnit, purchaseQty, qtyOptions, category]) => ({
+    id: m[key], name, recipeUnit, purchaseUnit, purchaseQty, purchasePrice: "",
+    ...(qtyOptions ? { qtyOptions } : {}),
+    ...(category ? { category } : {})
+  }));
+
+  function stdCosts() {
+    return [
+      { id: uid(), label: "Labor",          amount: "" },
+      { id: uid(), label: "Deli Container", amount: "" },
+      { id: uid(), label: "Label",          amount: "" },
+    ];
+  }
+  function bagCosts() {
+    return [
+      { id: uid(), label: "Labor",   amount: "" },
+      { id: uid(), label: "14oz Bag",amount: "" },
+      { id: uid(), label: "Label",   amount: "" },
+    ];
+  }
+  function bom(...keys) {
+    return keys.map(k => ({ id: uid(), matId: m[k], qty: "" }));
+  }
+  function prod(name, emoji, keys, costs, batchSize=40) {
+    return { id: uid(), name, emoji, bom: bom(...keys), otherCosts: costs, batchSize, margin: 30 };
+  }
+
+  const products = [
+    prod("Pico de Gallo",        "🍅", ["tomato","onion","cilantro","salt","lemon"],                                               stdCosts()),
+    prod("Salsa Fresca",         "🌶️", ["tomato","tomatillo","onion","cilantro","salt","lemon"],                                   stdCosts()),
+    prod("Salsa Roja",           "🌶️", ["tomato","chiles","onion","garlic","cumin","salt"],                                        stdCosts()),
+    prod("Salsa Ranchera",       "🌶️", ["tomato","onion","garlic","jalapeno","cumin","salt","oil"],                                stdCosts()),
+    prod("14oz Guacamole",       "🥑", ["avocado","onion","cilantro","lime","salt","jalapeno"],                                    stdCosts()),
+    prod("9oz Guacamole",        "🥑", ["avocado","onion","cilantro","lime","salt","jalapeno"],                                    stdCosts()),
+    prod("Queso",                "🧀", ["cheese","cream","jalapeno","onion","garlic","salt"],                                      stdCosts()),
+    prod("Mexican Rice",         "🍚", ["rice","tomato","onion","garlic","cbroth","tpaste","oil","cumin","salt"],                  stdCosts()),
+    prod("Refried Beans",        "🫘", ["pinto","onion","garlic","lard","salt","cumin"],                                           stdCosts()),
+    prod("Black Beans",          "🫘", ["blackbean","onion","garlic","cumin","salt","oil"],                                        stdCosts()),
+    prod("Chicken Tamales",      "🫔", ["masa","chicken","cbroth","chiles","lard","husks","garlic","cumin","salt"],                stdCosts()),
+    prod("Pork Tamales",         "🫔", ["masa","pork","cbroth","chiles","lard","husks","garlic","cumin","salt"],                   stdCosts()),
+    prod("Vegan Tamales",        "🌱", ["masa","blackbean","vbroth","chiles","vshort","husks","garlic","cumin","salt"],            stdCosts()),
+    prod("Chicken Burritos",     "🌯", ["tortilla","chicken","rice","pinto","cheese","scream","onion","cilantro","salt"],          stdCosts()),
+    prod("Pork Burritos",        "🌯", ["tortilla","pork","rice","pinto","cheese","scream","onion","cilantro","salt"],             stdCosts()),
+    prod("Barbacoa Burritos",    "🌯", ["tortilla","beef","rice","pinto","cheese","scream","onion","cilantro","salt"],             stdCosts()),
+    prod("Breakfast Burritos",   "🍳", ["tortilla","eggs","potato","chorizo","cheese","salt"],                                     stdCosts()),
+    prod("Chicken Tinga",        "🍗", ["chicken","tomato","chipotle","onion","garlic","cumin","salt"],                            stdCosts()),
+    prod("Alpastor",             "🌮", ["pork","chiles","pineapple","onion","garlic","cumin","salt"],                              stdCosts()),
+    prod("Pulled Pork",          "🥩", ["pork","garlic","cumin","chiles","salt"],                                                  stdCosts()),
+    prod("Barbacoa",             "🥩", ["beef","chiles","garlic","bbroth","cumin","salt"],                                         stdCosts()),
+    prod("Mole Poblano",         "🫕", ["chiles","chocolate","sesame","almonds","tomato","onion","garlic","cbroth","cumin","salt"],stdCosts()),
+    prod("Chicken Tortilla Soup","🍲", ["chicken","tomato","onion","garlic","cbroth","chiles","cumin","salt"],                     stdCosts()),
+    prod("Lentil Soup",          "🍲", ["lentils","tomato","onion","garlic","cumin","salt","oil"],                                 stdCosts()),
+    prod("Pozole Verde",         "🍲", ["pork","hominy","tomatillo","onion","garlic","cilantro","cbroth","salt"],                  stdCosts()),
+    prod("Beef Empanadas",       "🥟", ["flour","butter","eggs","gbeef","onion","garlic","cumin","salt"],                          stdCosts()),
+    prod("Chicken Empanadas",    "🥟", ["flour","butter","eggs","chicken","onion","garlic","cumin","salt"],                        stdCosts()),
+    prod("Potato Empanadas",     "🥟", ["flour","butter","eggs","potato","onion","garlic","salt"],                                 stdCosts()),
+    prod("Hibiscus Tea Sweet",   "🌺", ["hibiscus","sugar","lemons"],                                                              stdCosts()),
+    prod("Hibiscus Tea Unsweet", "🌺", ["hibiscus","lemons"],                                                                      stdCosts()),
+    prod("Prickly Pear Lemonade","🍹", ["ppear","lemons","sugar"],                                                                 stdCosts()),
+    prod("Corn Chips 14oz",      "🌽", ["masa","oil","salt","lime"],                                                               bagCosts()),
+  ];
+
+  return { version: DATA_VERSION, materials, products };
+}
+
+let db = (() => {
+  try {
+    const s = localStorage.getItem("cpi_db");
+    if (!s) return defaultData();
+    const parsed = JSON.parse(s);
+    if ((parsed.version || 1) < DATA_VERSION) return defaultData();
+    return parsed;
+  } catch { return defaultData(); }
+})();
+
+function saveData() {
+  localStorage.setItem("cpi_db", JSON.stringify(db));
+}
+
+// Cached DOM lookups
+const _elCache = {};
+function el(id) { return _elCache[id] || (_elCache[id] = document.getElementById(id)); }
+
+let _saveTimer, _recalcTimer;
+function debouncedSave() {
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(saveData, 400);
+}
+function debouncedRecalc() {
+  if (activeTab !== "results") return;
+  clearTimeout(_recalcTimer);
+  _recalcTimer = setTimeout(recalc, 120);
+}
+
+// ─── Navigation ──────────────────────────────────────────
+let activePage = "dashboard";
+let activeProductId = null;
+let activeTab = "recipe";
+
+const _pages = {};
+function showPage(name) {
+  // Admin-only pages — redirect employees to dashboard
+  if (appMode !== 'admin' && (name === 'materials' || name === 'editor')) {
+    name = 'dashboard';
+  }
+  Object.entries(_pages).forEach(([, pg]) => pg.classList.remove("active"));
+  (_pages[name] = _pages[name] || document.getElementById("page-" + name)).classList.add("active");
+  activePage = name;
+  if (name === "dashboard") renderDashboard();
+  if (name === "materials") renderMaterials();
+  if (name === "editor")    renderEditor();
+  if (name === "prices")    renderPrices();
+}
+
+// cache tab/panel NodeLists once
+let _tabs, _panels;
+function switchTab(name) {
+  activeTab = name;
+  _tabs   = _tabs   || document.querySelectorAll(".tab");
+  _panels = _panels || document.querySelectorAll(".tab-panel");
+  const ORDER = ["recipe","costs","results"];
+  _tabs.forEach((t, i)   => t.classList.toggle("active", ORDER[i] === name));
+  _panels.forEach((p, i) => p.classList.toggle("active", ORDER[i] === name));
+  if (name === "costs")   { renderInlineMaterials(); renderOtherCosts(); }
+  if (name === "results") recalc();
+}
+
+// ─── Dashboard ───────────────────────────────────────────
+const EMOJIS = ["🍅","🌿","🫙","🌽","🥑","🍋","🧅","🧄","🌶️","🫚","🥗","🍱"];
+let dashView = "grid"; // "grid" | "list"
+
+function toggleView() {
+  dashView = dashView === "grid" ? "list" : "grid";
+  el("view-toggle").textContent = dashView === "grid" ? "☰ List View" : "⊞ Grid View";
+  renderDashboard();
+}
+
+function renderDashboard() {
+  const wrap = document.getElementById("product-grid");
+  el("dash-count").textContent = `(${db.products.length})`;
+
+  // Build entire HTML in one pass — single innerHTML write is far faster than 32 appendChild calls
+  const isAdmin = appMode === 'admin';
+
+  if (dashView === "list") {
+    wrap.className = "";
+    const rows = db.products.map(p => {
+      const { matCost, otherCost } = calcCosts(p);
+      const total = matCost + otherCost;
+      const sell  = p.margin < 100 ? total / (1 - p.margin / 100) : 0;
+      const click = isAdmin ? `onclick="openProduct('${p.id}')"` : '';
+      return `<div class="product-list-row" ${click} style="${isAdmin?'cursor:pointer':''}">
+        <span>${p.emoji||"📦"}</span>
+        <span class="pname">${esc(p.name||"Unnamed")}</span>
+        <span class="pcost">${fmt(total)}</span>
+        <span class="pnum">${fmt(total*(p.batchSize||1))}</span>
+        ${isAdmin ? `<span class="psell">${fmt(sell)}</span>` : ''}
+        <span class="pnum">${p.batchSize||1} units</span>
+      </div>`;
+    }).join("");
+    wrap.innerHTML = `
+      <div class="product-list">
+        <div class="product-list-row header">
+          <span></span><span>Product</span>
+          <span style="text-align:right">Cost/Unit</span>
+          <span style="text-align:right">Batch Cost</span>
+          ${isAdmin ? '<span style="text-align:right">Sell Price</span>' : ''}
+          <span style="text-align:right">Batch Size</span>
+        </div>
+        ${rows}
+      </div>
+      ${isAdmin ? '<button class="btn btn-primary" style="margin-top:12px" onclick="newProduct()">+ New Product</button>' : ''}`;
+  } else {
+    wrap.className = "product-grid";
+    const cards = db.products.map(p => {
+      const { matCost, otherCost } = calcCosts(p);
+      const total = matCost + otherCost;
+      const sell  = p.margin < 100 ? total / (1 - p.margin / 100) : 0;
+      const click = isAdmin ? `onclick="openProduct('${p.id}')"` : '';
+      return `<div class="product-card" ${click} style="${isAdmin?'cursor:pointer':'cursor:default'}">
+        <div class="icon">${p.emoji||"📦"}</div>
+        <h3>${esc(p.name||"Unnamed Product")}</h3>
+        <div class="cost-big">${fmt(total)}<span style="font-size:.85rem;color:var(--muted);font-weight:500"> / unit</span></div>
+        <div class="stat-row">
+          <div class="stat"><span class="stat-label">Batch of ${p.batchSize||1}</span><span class="stat-value">${fmt(total*(p.batchSize||1))}</span></div>
+          <div class="stat"><span class="stat-label">Materials / unit</span><span class="stat-value">${fmt(matCost)}</span></div>
+          <div class="stat"><span class="stat-label">Other costs / unit</span><span class="stat-value">${fmt(otherCost)}</span></div>
+          ${isAdmin ? `<div class="stat"><span class="stat-label">Sell price (${p.margin}% margin)</span><span class="stat-value" style="color:var(--green)">${fmt(sell)}</span></div>` : ''}
+        </div>
+        ${isAdmin ? '<span class="chip">Edit recipe →</span>' : ''}
+      </div>`;
+    }).join("");
+    const addCard = isAdmin ? `<div class="add-card" onclick="newProduct()"><div class="plus">+</div><div>New Product</div></div>` : '';
+    wrap.innerHTML = cards + addCard;
+  }
+}
+
+function newProduct() {
+  const p = {
+    id: uid(),
+    name: "",
+    emoji: EMOJIS[db.products.length % EMOJIS.length],
+    bom: [],
+    otherCosts: [],
+    batchSize: 1,
+    margin: 30,
+  };
+  db.products.push(p);
+  saveData();
+  openProduct(p.id);
+}
+
+function openProduct(id) {
+  activeProductId = id;
+  activeTab = "recipe";
+  showPage("editor");
+}
+
+// ─── Editor ──────────────────────────────────────────────
+function currentProduct() {
+  return db.products.find(p => p.id === activeProductId);
+}
+
+function renderEditor() {
+  const p = currentProduct();
+  if (!p) return;
+
+  // Reset tabs
+  document.querySelectorAll(".tab").forEach((t, i) => t.classList.toggle("active", i === 0));
+  document.querySelectorAll(".tab-panel").forEach((pn, i) => pn.classList.toggle("active", i === 0));
+  activeTab = "recipe";
+
+  document.getElementById("prod-name").value   = p.name;
+  document.getElementById("prod-qty").value    = p.batchSize || 1;
+  document.getElementById("prod-margin").value = p.margin ?? 30;
+
+  renderBom();
+}
+
+function saveAndBack() {
+  saveData();
+  showPage("dashboard");
+}
+
+// ─── BOM ─────────────────────────────────────────────────
+function renderBom() {
+  const p = currentProduct();
+  const c = document.getElementById("bom-rows");
+  c.innerHTML = "";
+
+  if (db.materials.length === 0) {
+    c.innerHTML = '<div class="empty">No materials yet. Add some in the Materials page.</div>';
+    return;
+  }
+
+  p.bom.forEach((b, i) => {
+    const mat = db.materials.find(m => m.id === b.matId) || db.materials[0];
+    const lineCost = (parseFloat(mat?.cost) || 0) * (parseFloat(b.qty) || 0); // batch cost
+    const options  = db.materials.map(m =>
+      `<option value="${m.id}" ${m.id === b.matId ? "selected" : ""}>${esc(m.name || "—")}${m.recipeUnit ? ' ('+esc(m.recipeUnit)+')' : ''}</option>`
+    ).join("");
+    const d = document.createElement("div");
+    d.className = "bom-row";
+    d.innerHTML = `
+      <select onchange="p_bomMat(${i},this.value)">${options}</select>
+      <input type="number" min="0" step="any" placeholder="0" value="${b.qty}"
+        oninput="p_bomQty(${i},this.value)" />
+      <input class="ro" readonly value="${fmt(lineCost)}" />
+      <button class="btn-x" onclick="removeBomRow(${i})">×</button>
+    `;
+    c.appendChild(d);
+  });
+}
+
+function updateBomLineCosts() {
+  const p = currentProduct();
+  if (!p) return;
+  document.querySelectorAll('#bom-rows .bom-row').forEach((row, i) => {
+    const b = p.bom[i];
+    if (!b) return;
+    const mat  = db.materials.find(m => m.id === b.matId);
+    const cost = matCostPerUnit(mat) * (parseFloat(b.qty) || 0);
+    const ro   = row.querySelectorAll('input')[1];
+    if (ro) ro.value = fmt(cost);
+  });
+  debouncedRecalc();
+}
+
+function p_bomMat(i, val) {
+  currentProduct().bom[i].matId = val;
+  debouncedSave(); renderBom(); debouncedRecalc();
+}
+function p_bomQty(i, val) {
+  currentProduct().bom[i].qty = val;
+  debouncedSave(); updateBomLineCosts();
+}
+function addBomRow() {
+  if (!db.materials.length) { alert("Add materials first via the Materials page."); return; }
+  const p = currentProduct();
+  p.bom.push({ id: uid(), matId: db.materials[0].id, qty: "" });
+  saveData(); renderBom();
+}
+function removeBomRow(i) {
+  currentProduct().bom.splice(i, 1);
+  saveData(); renderBom(); debouncedRecalc();
+}
+
+// ─── Inline Materials (costs tab) ────────────────────────
+function renderInlineMaterials() {
+  const c = document.getElementById("inline-mat-rows");
+  c.innerHTML = "";
+  db.materials.forEach((m, i) => {
+    const cpu = matCostPerUnit(m);
+    const purchaseDesc = m.purchaseQty
+      ? `${m.purchaseQty} ${m.recipeUnit||''} / ${m.purchaseUnit||'purchase'}`
+      : m.purchaseUnit || '—';
+    const d = document.createElement("div");
+    d.className = "rm-compact-row";
+    d.innerHTML = `
+      <input class="ro" readonly tabindex="-1" value="${esc(m.name||'—')}" />
+      <input class="ro" readonly tabindex="-1" value="${esc(purchaseDesc)}" />
+      <input type="number" placeholder="0.00" min="0" step="0.01" value="${m.purchasePrice||''}"
+        oninput="db.materials[${i}].purchasePrice=this.value; debouncedSave(); updateBomLineCosts()" />
+      <input class="ro" readonly tabindex="-1" value="${cpu > 0 ? fmt(cpu)+'/'+esc(m.recipeUnit||'unit') : '—'}" />
+      <button class="btn-x" onclick="removeMaterialGlobal('${m.id}')">×</button>
+    `;
+    c.appendChild(d);
+  });
+}
+
+function addMaterialInline() {
+  db.materials.push({ id: uid(), name: "", recipeUnit: "", purchaseUnit: "", purchaseQty: "", purchasePrice: "" });
+  saveData(); renderInlineMaterials(); renderBom();
+}
+
+function removeMaterialGlobal(id) {
+  db.materials = db.materials.filter(m => m.id !== id);
+  db.products.forEach(p => p.bom = p.bom.filter(b => db.materials.find(m => m.id === b.matId)));
+  saveData(); renderInlineMaterials(); renderBom(); debouncedRecalc();
+}
+
+// ─── Other Costs ─────────────────────────────────────────
+function renderOtherCosts() {
+  const p = currentProduct();
+  const c = document.getElementById("oc-rows");
+  c.innerHTML = "";
+  p.otherCosts.forEach((o, i) => {
+    const d = document.createElement("div");
+    d.className = "oc-row";
+    d.innerHTML = `
+      <input type="text" placeholder="e.g. Labor" value="${esc(o.label)}"
+        oninput="currentProduct().otherCosts[${i}].label=this.value; debouncedSave()" />
+      <input type="number" placeholder="0.00" min="0" step="0.01" value="${o.amount}"
+        oninput="currentProduct().otherCosts[${i}].amount=this.value; debouncedSave(); debouncedRecalc()" />
+      <button class="btn-x" onclick="removeOtherCost(${i})">×</button>
+    `;
+    c.appendChild(d);
+  });
+}
+
+function addOtherCost() {
+  currentProduct().otherCosts.push({ id: uid(), label: "", amount: "" });
+  saveData(); renderOtherCosts();
+}
+function removeOtherCost(i) {
+  currentProduct().otherCosts.splice(i, 1);
+  saveData(); renderOtherCosts();
+}
+
+// ─── Materials Page ───────────────────────────────────────
+function renderMaterials() {
+  const c = document.getElementById("mat-rows");
+  c.innerHTML = "";
+
+  const groups = {};
+  db.materials.forEach((m, i) => {
+    const cat = m.category || 'Other';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push({ m, i });
+  });
+
+  CAT_ORDER.forEach(cat => {
+    const items = groups[cat];
+    if (!items || !items.length) return;
+    const slug = CAT_SLUG[cat] || 'other';
+
+    const hdr = document.createElement("div");
+    hdr.style.cssText = "margin:16px 0 6px";
+    hdr.innerHTML = `<span class="price-cat-header cat-${slug}">${CAT_ICON[cat]} ${cat}</span>`;
+    c.appendChild(hdr);
+
+    items.forEach(({ m, i }) => {
+      const cpu = matCostPerUnit(m);
+      const d = document.createElement("div");
+      d.className = "rm-row";
+      d.innerHTML = `
+        <input type="text" placeholder="e.g. Roma Tomatoes" value="${esc(m.name)}"
+          oninput="db.materials[${i}].name=this.value; debouncedSave()" />
+        <input type="text" placeholder="lb" value="${esc(m.recipeUnit||'')}"
+          oninput="db.materials[${i}].recipeUnit=this.value; debouncedSave()" />
+        <input type="text" placeholder="box" value="${esc(m.purchaseUnit||'')}"
+          oninput="db.materials[${i}].purchaseUnit=this.value; debouncedSave()" />
+        <input type="number" placeholder="25" min="0" step="any" value="${m.purchaseQty||''}"
+          oninput="db.materials[${i}].purchaseQty=this.value; debouncedSave(); updateBomLineCosts()" />
+        <input type="number" placeholder="0.00" min="0" step="0.01" value="${m.purchasePrice||''}"
+          oninput="db.materials[${i}].purchasePrice=this.value; debouncedSave(); updateBomLineCosts()" />
+        <input class="ro" readonly tabindex="-1" value="${cpu > 0 ? fmt(cpu)+'/'+esc(m.recipeUnit||'unit') : '—'}" />
+        <button class="btn-x" onclick="removeMat(${i})">×</button>
+      `;
+      c.appendChild(d);
+    });
+  });
+}
+
+function addMaterial() {
+  db.materials.push({ id: uid(), name: "", recipeUnit: "", purchaseUnit: "", purchaseQty: "", purchasePrice: "" });
+  saveData(); renderMaterials();
+  const inputs = document.querySelectorAll("#mat-rows .rm-row input[type=text]");
+  if (inputs.length) inputs[inputs.length - 5].focus();
+}
+
+function removeMat(i) {
+  const id = db.materials[i].id;
+  db.materials.splice(i, 1);
+  db.products.forEach(p => p.bom = p.bom.filter(b => b.matId !== id));
+  saveData(); renderMaterials();
+}
+
+// ─── Calculations ─────────────────────────────────────────
+function matCostPerUnit(mat) {
+  if (!mat) return 0;
+  const price = parseFloat(mat.purchasePrice) || 0;
+  const qty   = parseFloat(mat.purchaseQty)   || 0;
+  return qty > 0 ? price / qty : 0;
+}
+
+function calcCosts(p) {
+  const batchSize = Math.max(1, p.batchSize || 1);
+  let matBatchTotal = 0;
+  (p.bom || []).forEach(b => {
+    const mat = db.materials.find(m => m.id === b.matId);
+    matBatchTotal += matCostPerUnit(mat) * (parseFloat(b.qty) || 0);
+  });
+  let otherBatchTotal = 0;
+  (p.otherCosts || []).forEach(o => {
+    otherBatchTotal += (parseFloat(o.amount) || 0);
+  });
+  const matCost   = matBatchTotal   / batchSize;
+  const otherCost = otherBatchTotal / batchSize;
+  return { matCost, otherCost, matBatchTotal, otherBatchTotal };
+}
+
+function recalc() {
+  const p = currentProduct();
+  if (!p) return;
+  const batchSize = Math.max(1, p.batchSize || 1);
+  const { matCost, otherCost, matBatchTotal, otherBatchTotal } = calcCosts(p);
+  const total  = matCost + otherCost;
+  const margin = p.margin ?? 30;
+  const sell   = margin < 100 ? total / (1 - margin / 100) : 0;
+
+  el("r-cost").textContent  = fmt(total);
+  el("r-mat").textContent   = fmt(matCost);
+  el("r-other").textContent = fmt(otherCost);
+  el("r-sell").textContent  = fmt(sell);
+
+  const wrap = el("breakdown-wrap");
+
+  const matLines = (p.bom || []).map(b => {
+    const mat = db.materials.find(m => m.id === b.matId);
+    const qty = parseFloat(b.qty) || 0;
+    const uc  = matCostPerUnit(mat);
+    const unit = mat?.recipeUnit || mat?.unit || "";
+    return { name: mat?.name || "—", unit, qty, uc, batchCost: uc * qty };
+  }).filter(l => l.qty > 0 || l.uc > 0);
+
+  const ocLines = (p.otherCosts || []).map(o => ({
+    label: o.label || "—",
+    batchCost: parseFloat(o.amount) || 0,
+  })).filter(l => l.batchCost > 0);
+
+  if (!matLines.length && !ocLines.length) { wrap.innerHTML = ""; return; }
+
+  let rows = "";
+
+  if (matLines.length) {
+    rows += `<tr class="section-label"><td colspan="4">Raw Materials — batch of ${batchSize} units</td></tr>`;
+    matLines.forEach(l => {
+      rows += `<tr>
+        <td>${esc(l.name)}</td>
+        <td>${l.qty} ${esc(l.unit)}</td>
+        <td>${fmt(l.uc)} / ${esc(l.unit)}</td>
+        <td>${fmt(l.batchCost)}</td>
+      </tr>`;
+    });
+    rows += `<tr class="sub">
+      <td colspan="3">Batch materials total → ÷ ${batchSize} units</td>
+      <td>${fmt(matBatchTotal)} → ${fmt(matCost)}/unit</td>
+    </tr>`;
+  }
+
+  if (ocLines.length) {
+    rows += `<tr class="section-label"><td colspan="4">Other Costs — per batch ÷ ${batchSize} units</td></tr>`;
+    ocLines.forEach(l => {
+      rows += `<tr>
+        <td>${esc(l.label)}</td>
+        <td colspan="2">${fmt(l.batchCost)} ÷ ${batchSize}</td>
+        <td>${fmt(l.batchCost / batchSize)}/unit</td>
+      </tr>`;
+    });
+    rows += `<tr class="sub">
+      <td colspan="3">Batch other costs total → ÷ ${batchSize} units</td>
+      <td>${fmt(otherBatchTotal)} → ${fmt(otherCost)}/unit</td>
+    </tr>`;
+  }
+
+  rows += `<tr class="grand"><td colspan="3">Cost Calculator</td><td>${fmt(total)}</td></tr>`;
+
+  wrap.innerHTML = `<table class="breakdown-tbl">
+    <thead><tr><th>Ingredient / Cost</th><th>Batch Qty</th><th>Rate</th><th>Batch Cost</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+// ─── Delete ──────────────────────────────────────────────
+function confirmDelete() {
+  document.getElementById("delete-overlay").classList.add("show");
+}
+function closeOverlay() {
+  document.getElementById("delete-overlay").classList.remove("show");
+}
+function deleteProduct() {
+  db.products = db.products.filter(p => p.id !== activeProductId);
+  saveData();
+  closeOverlay();
+  showPage("dashboard");
+}
+
+// ─── Helpers ─────────────────────────────────────────────
+function fmt(n) {
+  if (isNaN(n) || !isFinite(n) || n === 0 && arguments[0] === undefined) return "$—";
+  return "$" + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+function esc(s) {
+  return (s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+
+// ─── Migrations / seeds ──────────────────────────────────
+function patchMaterials() {
+  // Items to remove from existing saves
+  const removeNames = new Set([
+    "Lime Juice", "Vegetable Oil", "Lard", "Vegetable Shortening",
+    "Vegetable Broth", "Chorizo", "Beef Chuck", "Beef Broth",
+    "Mexican Chocolate", "Sesame Seeds", "Almonds", "All-Purpose Flour",
+    "Butter", "Lemons", "Heavy Cream",
+  ]);
+  // field updates (force-overwrite unit/qty/qtyOptions; price only if empty)
+  const patches = {
+    "Avocados":           { purchaseUnit: "flat", purchaseQty: "48", qtyOptions: ["48","60"], category: "Produce" },
+    "Lemon Juice":        { purchaseUnit: "case", purchaseQty: "512", purchasePrice: "65",    category: "Produce", recipeUnit: "oz" },
+    "Jalapeño":           { purchaseUnit: "case", category: "Produce" },
+    "Garlic":             { purchaseUnit: "case", purchaseQty: "20", qtyOptions: null,        category: "Produce" },
+    "Whole Milk":         { purchaseUnit: "gal",  purchaseQty: "128", recipeUnit: "oz",       category: "Dairy" },
+    "Dried Hibiscus":     { purchaseUnit: "lb",   purchaseQty: "1",  recipeUnit: "lb",        category: "Dry Product" },
+    "Pasilla Pepper":     { purchaseUnit: "lb",   purchaseQty: "1",  recipeUnit: "lb",        category: "Dry Product" },
+    "Guajillo Pepper":    { purchaseUnit: "lb",   purchaseQty: "1",  recipeUnit: "lb",        category: "Dry Product" },
+    "Chile Arbol Pepper": { purchaseUnit: "lb",   purchaseQty: "1",  recipeUnit: "lb",        category: "Dry Product" },
+    "Prickly Pear Syrup": { name: "Prickly Pear",                                             category: "Produce" },
+    "Cheese":             { name: "American Cheese",                                          category: "Dairy" },
+    "Pork Shoulder":      { name: "Boneless Cushion Pork",                                    category: "Meat" },
+    "Roma Tomatoes":      { category: "Produce" },
+    "Cilantro":           { category: "Produce", recipeUnit: "lb", purchaseUnit: "case", purchaseQty: "25" },
+    "Green Tomatillos":   { category: "Produce" },
+    "White Onions":       { category: "Produce" },
+    "Potatoes":           { category: "Produce" },
+    "Pineapple":          { category: "Produce" },
+    "Prickly Pear":       { category: "Produce", purchaseUnit: "lb", purchaseQty: "1", recipeUnit: "lb" },
+    "Habanero Pepper":    { category: "Produce" },
+    "Poblano Pepper":     { category: "Produce" },
+    "Chicken":            { name: "Boneless Chicken Breast", category: "Meat" },
+    "Boneless Cushion Pork": { category: "Meat" },
+    "Ground Beef":        { category: "Meat" },
+    "Beef Knuckle":       { category: "Meat" },
+    "American Cheese":    { category: "Dairy" },
+    "Sour Cream":         { category: "Dairy" },
+    "Eggs":               { category: "Meat", purchaseQty: "144" },
+    "Sea Salt":           { category: "Dry Product" },
+    "Long Grain Rice":    { category: "Dry Product" },
+    "Cumin":              { category: "Dry Product", purchaseUnit: "lb", purchaseQty: "453", recipeUnit: "g" },
+    "Pinto Beans":        { category: "Dry Product" },
+    "Masa Harina":        { category: "Dry Product" },
+    "Dried Chiles":       { category: "Dry Product" },
+    "Corn Husks":         { category: "Dry Product" },
+    "Black Beans":        { category: "Dry Product" },
+    "Flour Tortillas":    { category: "Dry Product" },
+    "Lentils":            { category: "Dry Product" },
+    "Dried Hibiscus":     { category: "Dry Product" },
+    "Sugar":              { category: "Dry Product" },
+    "Chicken Broth":      { category: "Can Goods" },
+    "Tomato Paste":       { name: "Tomato Puree", category: "Can Goods" },
+    "Chipotle Peppers":   { category: "Dry Product", purchaseUnit: "bag" },
+    "Hominy":             { name: "Hominy Corn", category: "Can Goods" },
+  };
+  // New materials to add if not present
+  const newMats = [
+    { name: "Beef Knuckle",    recipeUnit: "lb", purchaseUnit: "case", purchaseQty: "", purchasePrice: "" },
+    { name: "Habanero Pepper", recipeUnit: "lb", purchaseUnit: "case", purchaseQty: "", purchasePrice: "" },
+    { name: "Poblano Pepper",  recipeUnit: "lb", purchaseUnit: "case", purchaseQty: "", purchasePrice: "" },
+  ];
+  const forceKeys = new Set(["purchaseUnit", "purchaseQty", "qtyOptions", "name", "category", "recipeUnit"]);
+  let changed = false;
+
+  // Remove unwanted materials and strip them from BOMs
+  const removedIds = new Set();
+  db.materials = db.materials.filter(m => {
+    if (removeNames.has(m.name)) { removedIds.add(m.id); changed = true; return false; }
+    return true;
+  });
+  if (removedIds.size) {
+    db.products.forEach(p => { p.bom = p.bom.filter(b => !removedIds.has(b.matId)); });
+  }
+
+  // Apply patches
+  db.materials.forEach(m => {
+    const p = patches[m.name];
+    if (!p) return;
+    Object.entries(p).forEach(([k, v]) => {
+      if (forceKeys.has(k) || !m[k]) { m[k] = v; changed = true; }
+    });
+  });
+
+  // Add new materials if missing
+  const newMats2 = [
+    { name: "Pasilla Pepper",     recipeUnit: "oz", purchaseUnit: "bag", purchaseQty: "", purchasePrice: "", category: "Dry Product" },
+    { name: "Guajillo Pepper",    recipeUnit: "oz", purchaseUnit: "bag", purchaseQty: "", purchasePrice: "", category: "Dry Product" },
+    { name: "Chile Arbol Pepper", recipeUnit: "oz", purchaseUnit: "bag", purchaseQty: "", purchasePrice: "", category: "Dry Product" },
+    { name: "Garbanzo Bean",      recipeUnit: "lb", purchaseUnit: "case", purchaseQty: "", purchasePrice: "", category: "Can Goods" },
+    { name: "Whole Milk",         recipeUnit: "oz", purchaseUnit: "case", purchaseQty: "", purchasePrice: "", category: "Dairy" },
+    { name: "Paprika Pepper",     recipeUnit: "g",  purchaseUnit: "lb",   purchaseQty: "453", purchasePrice: "", category: "Dry Product" },
+    { name: "Black Pepper",       recipeUnit: "g",  purchaseUnit: "lb",   purchaseQty: "453", purchasePrice: "", category: "Dry Product" },
+    { name: "Garlic Powder",      recipeUnit: "g",  purchaseUnit: "lb",   purchaseQty: "453", purchasePrice: "", category: "Dry Product" },
+    { name: "Garlic Salt",        recipeUnit: "g",  purchaseUnit: "lb",   purchaseQty: "453", purchasePrice: "", category: "Dry Product" },
+  ];
+  [...newMats, ...newMats2].forEach(nm => {
+    if (!db.materials.find(m => m.name === nm.name)) {
+      db.materials.push({ id: uid(), ...nm });
+      changed = true;
+    }
+  });
+
+  if (changed) saveData();
+}
+function seedProducts() {
+  let changed = false;
+  const names = db.products.map(p => p.name);
+
+  function matId(name) { return db.materials.find(m => m.name === name)?.id; }
+  function bom(...names) { return names.map(n => matId(n)).filter(Boolean).map(matId => ({ id: uid(), matId, qty: "" })); }
+  function stdCosts() {
+    return [
+      { id: uid(), label: "Labor",          amount: "" },
+      { id: uid(), label: "Deli Container", amount: "" },
+      { id: uid(), label: "Label",          amount: "" },
+    ];
+  }
+
+  if (!names.includes("Salsa Fresca")) {
+    db.products.push({ id: uid(), name: "Salsa Fresca",   emoji: "🌶️",
+      bom: bom("Roma Tomatoes","Green Tomatillos","White Onions","Cilantro","Sea Salt","Lemon Juice"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("14oz Guacamole")) {
+    db.products.push({ id: uid(), name: "14oz Guacamole", emoji: "🥑",
+      bom: bom("Avocados","White Onions","Cilantro","Lime Juice","Sea Salt","Jalapeño"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("9oz Guacamole")) {
+    db.products.push({ id: uid(), name: "9oz Guacamole",  emoji: "🥑",
+      bom: bom("Avocados","White Onions","Cilantro","Lime Juice","Sea Salt","Jalapeño"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Mexican Rice")) {
+    db.products.push({ id: uid(), name: "Mexican Rice", emoji: "🍚",
+      bom: bom("Long Grain Rice","Roma Tomatoes","White Onions","Garlic","Chicken Broth","Tomato Paste","Vegetable Oil","Cumin","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Refried Beans")) {
+    db.products.push({ id: uid(), name: "Refried Beans", emoji: "🫘",
+      bom: bom("Pinto Beans","White Onions","Garlic","Lard","Sea Salt","Cumin"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Chicken Tamales")) {
+    db.products.push({ id: uid(), name: "Chicken Tamales", emoji: "🫔",
+      bom: bom("Masa Harina","Chicken","Chicken Broth","Dried Chiles","Lard","Corn Husks","Garlic","Cumin","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Pork Tamales")) {
+    db.products.push({ id: uid(), name: "Pork Tamales", emoji: "🫔",
+      bom: bom("Masa Harina","Pork Shoulder","Chicken Broth","Dried Chiles","Lard","Corn Husks","Garlic","Cumin","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Vegan Tamales")) {
+    db.products.push({ id: uid(), name: "Vegan Tamales", emoji: "🌱",
+      bom: bom("Masa Harina","Black Beans","Vegetable Broth","Dried Chiles","Vegetable Shortening","Corn Husks","Garlic","Cumin","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Chicken Burritos")) {
+    db.products.push({ id: uid(), name: "Chicken Burritos", emoji: "🌯",
+      bom: bom("Flour Tortillas","Chicken","Long Grain Rice","Pinto Beans","Cheese","Sour Cream","White Onions","Cilantro","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Pork Burritos")) {
+    db.products.push({ id: uid(), name: "Pork Burritos", emoji: "🌯",
+      bom: bom("Flour Tortillas","Pork Shoulder","Long Grain Rice","Pinto Beans","Cheese","Sour Cream","White Onions","Cilantro","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Breakfast Burritos")) {
+    db.products.push({ id: uid(), name: "Breakfast Burritos", emoji: "🍳",
+      bom: bom("Flour Tortillas","Eggs","Potatoes","Chorizo","Cheese","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Barbacoa Burritos")) {
+    db.products.push({ id: uid(), name: "Barbacoa Burritos", emoji: "🌯",
+      bom: bom("Flour Tortillas","Beef Chuck","Long Grain Rice","Pinto Beans","Cheese","Sour Cream","White Onions","Cilantro","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Black Beans")) {
+    db.products.push({ id: uid(), name: "Black Beans", emoji: "🫘",
+      bom: bom("Black Beans","White Onions","Garlic","Cumin","Sea Salt","Vegetable Oil"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Queso")) {
+    db.products.push({ id: uid(), name: "Queso", emoji: "🧀",
+      bom: bom("Cheese","Heavy Cream","Jalapeño","White Onions","Garlic","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Chicken Tinga")) {
+    db.products.push({ id: uid(), name: "Chicken Tinga", emoji: "🍗",
+      bom: bom("Chicken","Roma Tomatoes","Chipotle Peppers","White Onions","Garlic","Cumin","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Alpastor")) {
+    db.products.push({ id: uid(), name: "Alpastor", emoji: "🌮",
+      bom: bom("Pork Shoulder","Dried Chiles","Pineapple","White Onions","Garlic","Cumin","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Pulled Pork")) {
+    db.products.push({ id: uid(), name: "Pulled Pork", emoji: "🥩",
+      bom: bom("Pork Shoulder","Garlic","Cumin","Dried Chiles","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Barbacoa")) {
+    db.products.push({ id: uid(), name: "Barbacoa", emoji: "🥩",
+      bom: bom("Beef Chuck","Dried Chiles","Garlic","Beef Broth","Cumin","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Mole Poblano")) {
+    db.products.push({ id: uid(), name: "Mole Poblano", emoji: "🫕",
+      bom: bom("Dried Chiles","Mexican Chocolate","Sesame Seeds","Almonds","Roma Tomatoes","White Onions","Garlic","Chicken Broth","Cumin","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Chicken Tortilla Soup")) {
+    db.products.push({ id: uid(), name: "Chicken Tortilla Soup", emoji: "🍲",
+      bom: bom("Chicken","Roma Tomatoes","White Onions","Garlic","Chicken Broth","Dried Chiles","Cumin","Sea Salt","Corn Husks"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Lentil Soup")) {
+    db.products.push({ id: uid(), name: "Lentil Soup", emoji: "🍲",
+      bom: bom("Lentils","Roma Tomatoes","White Onions","Garlic","Cumin","Sea Salt","Vegetable Oil"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Pozole Verde")) {
+    db.products.push({ id: uid(), name: "Pozole Verde", emoji: "🍲",
+      bom: bom("Pork Shoulder","Hominy","Green Tomatillos","White Onions","Garlic","Cilantro","Chicken Broth","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Salsa Roja")) {
+    db.products.push({ id: uid(), name: "Salsa Roja", emoji: "🌶️",
+      bom: bom("Roma Tomatoes","Dried Chiles","White Onions","Garlic","Cumin","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Salsa Ranchera")) {
+    db.products.push({ id: uid(), name: "Salsa Ranchera", emoji: "🌶️",
+      bom: bom("Roma Tomatoes","White Onions","Garlic","Jalapeño","Cumin","Sea Salt","Vegetable Oil"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Beef Empanadas")) {
+    db.products.push({ id: uid(), name: "Beef Empanadas", emoji: "🥟",
+      bom: bom("All-Purpose Flour","Butter","Eggs","Ground Beef","White Onions","Garlic","Cumin","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Chicken Empanadas")) {
+    db.products.push({ id: uid(), name: "Chicken Empanadas", emoji: "🥟",
+      bom: bom("All-Purpose Flour","Butter","Eggs","Chicken","White Onions","Garlic","Cumin","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Potato Empanadas")) {
+    db.products.push({ id: uid(), name: "Potato Empanadas", emoji: "🥟",
+      bom: bom("All-Purpose Flour","Butter","Eggs","Potatoes","White Onions","Garlic","Sea Salt"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Hibiscus Tea Sweet")) {
+    db.products.push({ id: uid(), name: "Hibiscus Tea Sweet", emoji: "🌺",
+      bom: bom("Dried Hibiscus","Sugar","Lemons"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Hibiscus Tea Unsweet")) {
+    db.products.push({ id: uid(), name: "Hibiscus Tea Unsweet", emoji: "🌺",
+      bom: bom("Dried Hibiscus","Lemons"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Prickly Pear Lemonade")) {
+    db.products.push({ id: uid(), name: "Prickly Pear Lemonade", emoji: "🍹",
+      bom: bom("Prickly Pear Syrup","Lemons","Sugar"),
+      otherCosts: stdCosts(), batchSize: 40, margin: 30 });
+    changed = true;
+  }
+  if (!names.includes("Corn Chips 14oz")) {
+    db.products.push({ id: uid(), name: "Corn Chips 14oz", emoji: "🌽",
+      bom: bom("Masa Harina","Vegetable Oil","Sea Salt","Lime Juice"),
+      otherCosts: [
+        { id: uid(), label: "Labor",    amount: "" },
+        { id: uid(), label: "14oz Bag", amount: "" },
+        { id: uid(), label: "Label",    amount: "" },
+      ],
+      batchSize: 40, margin: 30 });
+    changed = true;
+  }
+
+  if (changed) saveData();
+}
+
+// ─── Mode & PIN ──────────────────────────────────────────
+let appMode = 'employee'; // 'employee' | 'admin'
+let pinBuffer = '';
+const DEFAULT_PIN = '251960';
+
+function getPin() { return localStorage.getItem('cpi_pin') || DEFAULT_PIN; }
+
+function renderNav() {
+  const n = document.getElementById('nav-right');
+  const banner = el('mode-banner');
+  if (appMode === 'admin') {
+    banner.className = 'mode-banner admin';
+    banner.textContent = '🔓 ADMIN MODE — Full Access';
+    n.innerHTML = `
+      <span id="sync-label" style="font-size:.8rem;font-weight:600;color:var(--muted);display:none">
+        <span class="sync-dot offline" id="sync-dot"></span><span id="sync-text">Not connected</span>
+      </span>
+      <button class="btn btn-ghost btn-sm" onclick="showPage('dashboard')">📊 Products</button>
+      <button class="btn btn-ghost btn-sm" onclick="showPage('materials')">⚗️ Materials</button>
+      <button class="btn btn-ghost btn-sm" onclick="showPage('prices')">💲 Prices</button>
+      <button class="btn btn-ghost btn-sm" onclick="showCloudSetup()">☁️ Cloud</button>
+      <button class="btn btn-ghost btn-sm" onclick="el('change-pin-overlay').classList.add('show')">🔑 PIN</button>
+      <button class="btn btn-primary btn-sm" onclick="newProduct()">+ New Product</button>
+      <button class="btn btn-ghost btn-sm" onclick="exitAdmin()" style="color:var(--danger)">Exit Admin</button>
+    `;
+  } else {
+    banner.className = 'mode-banner employee';
+    banner.textContent = '👤 Employee Mode';
+    n.innerHTML = `
+      <span id="sync-label" style="font-size:.8rem;font-weight:600;color:var(--muted);display:none">
+        <span class="sync-dot offline" id="sync-dot"></span><span id="sync-text">Not connected</span>
+      </span>
+      <button class="btn btn-ghost btn-sm" onclick="showPage('dashboard')">📊 Products</button>
+      <button class="btn btn-primary btn-sm" onclick="showPage('prices')">💲 Update Prices</button>
+      <button class="btn btn-ghost btn-sm" onclick="openPinModal()">🔒 Admin Login</button>
+    `;
+  }
+  // Re-wire cloud sync els after nav re-render
+  const saved = _loadFbConfig();
+  if (_fbDb || saved) {
+    const lbl = document.getElementById('sync-label');
+    if (lbl) lbl.style.display = 'inline-flex';
+  }
+}
+
+function openPinModal() {
+  pinBuffer = '';
+  el('pin-display').textContent = '––––––';
+  el('pin-err').textContent = '';
+  el('pin-overlay').classList.add('show');
+}
+function closePinModal() { el('pin-overlay').classList.remove('show'); }
+
+document.addEventListener('keydown', function(e) {
+  if (!el('pin-overlay').classList.contains('show')) return;
+  if (e.key >= '0' && e.key <= '9') { e.preventDefault(); pinKey(e.key); }
+  else if (e.key === 'Backspace') { e.preventDefault(); pinKey('back'); }
+  else if (e.key === 'Escape') { e.preventDefault(); closePinModal(); }
+});
+
+function pinKey(k) {
+  if (k === 'clear') { pinBuffer = ''; }
+  else if (k === 'back') { pinBuffer = pinBuffer.slice(0, -1); }
+  else if (pinBuffer.length < 6) { pinBuffer += k; }
+
+  el('pin-display').textContent = pinBuffer.padEnd(6, '–').split('').join(' ');
+
+  if (pinBuffer.length === 6) {
+    setTimeout(() => {
+      if (pinBuffer === getPin()) {
+        closePinModal();
+        enterAdmin();
+      } else {
+        el('pin-err').textContent = 'Incorrect PIN. Try again.';
+        pinBuffer = '';
+        el('pin-display').textContent = '– – – – – –';
+      }
+    }, 200);
+  }
+}
+
+function enterAdmin() {
+  appMode = 'admin';
+  renderNav();
+  showPage('dashboard');
+}
+function exitAdmin() {
+  appMode = 'employee';
+  renderNav();
+  showPage('dashboard');
+}
+
+function saveNewPin() {
+  const p = el('new-pin-input').value.trim();
+  if (p.length !== 6 || !/^\d{6}$/.test(p)) {
+    el('pin-change-err').textContent = 'PIN must be exactly 6 digits.';
+    el('pin-change-err').style.display = 'block';
+    return;
+  }
+  localStorage.setItem('cpi_pin', p);
+  if (_fbDb && _fbPath) _fbDb.ref(_fbPath + '_pin').set(p);
+  el('new-pin-input').value = '';
+  el('pin-change-err').style.display = 'none';
+  el('change-pin-overlay').classList.remove('show');
+}
+
+// ─── Employee Price Update Page ───────────────────────────
+const CAT_ORDER   = ['Meat','Produce','Dairy','Dry Product','Can Goods','Containers','Other'];
+const CAT_SLUG    = { 'Meat':'meat','Produce':'produce','Dairy':'dairy','Dry Product':'dry','Can Goods':'can','Containers':'containers','Other':'other' };
+const CAT_ICON    = { 'Meat':'🥩','Produce':'🥦','Dairy':'🧀','Dry Product':'🌾','Can Goods':'🥫','Containers':'📦','Other':'📋' };
+
+function renderPrices() {
+  const c = document.getElementById('price-rows');
+  const head = document.getElementById('price-grid-head');
+  if (head) {
+    head.className = 'col-head price-grid-head' + (appMode === 'admin' ? ' admin-cols' : '');
+    const bannerH = (el('mode-banner').offsetHeight || 0);
+    const navH    = (document.querySelector('.nav').offsetHeight || 56);
+    head.style.top = (bannerH + navH) + 'px';
+  }
+  const adminCols = appMode === 'admin';
+
+  // Group materials by category, preserving global index
+  const groups = {};
+  db.materials.forEach((m, i) => {
+    const cat = m.category || 'Other';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push({ m, i });
+  });
+
+  let html = '';
+  CAT_ORDER.forEach(cat => {
+    const items = groups[cat];
+    if (!items || !items.length) return;
+    const slug = CAT_SLUG[cat] || 'other';
+    html += `<div style="margin-top:4px"><span class="price-cat-header cat-${slug}">${CAT_ICON[cat]} ${cat}</span></div>`;
+    items.forEach(({ m, i }) => {
+      const cpu = matCostPerUnit(m);
+      const qtyCell = m.qtyOptions
+        ? m.qtyOptions.map(opt =>
+            `<button class="btn btn-sm ${m.purchaseQty==opt?'btn-primary':'btn-ghost'}"
+              style="padding:3px 8px;font-size:.78rem"
+              onclick="qtyToggle(${i},'${opt}')">${opt}ct</button>`
+          ).join('')
+        : `<input type="number" placeholder="qty" min="0" step="any"
+              value="${m.purchaseQty||''}"
+              style="text-align:right;width:100%"
+              oninput="qtyUpdate(${i}, this.value)" />`;
+      const delBtn = adminCols
+        ? `<button class="btn-x" title="Remove" onclick="deleteMaterialFromPrices(${i})">×</button>`
+        : '';
+      html += `<div class="price-row ${adminCols?'admin-cols':''}">
+        <div>
+          <div style="font-weight:600;font-size:.88rem">${esc(m.name||'—')}</div>
+          <div style="font-size:.75rem;color:var(--muted)">${esc(m.purchaseUnit||'')}${m.purchaseUnit&&m.recipeUnit?' → '+esc(m.recipeUnit):''}</div>
+        </div>
+        <div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">${qtyCell}</div>
+        <input type="number" placeholder="0.00" min="0" step="0.01"
+          value="${m.purchasePrice||''}" style="text-align:right"
+          oninput="priceUpdate(${i}, this.value)" />
+        <span style="text-align:right;font-size:.85rem;font-weight:700;color:var(--text)"
+          id="cpu-${i}">${cpu > 0 ? fmt(cpu)+'/'+esc(m.recipeUnit||'unit') : '—'}</span>
+        ${delBtn}
+      </div>`;
+    });
+  });
+  c.innerHTML = html;
+}
+
+function qtyUpdate(i, val) {
+  db.materials[i].purchaseQty = val;
+  const cpu = matCostPerUnit(db.materials[i]);
+  const cpuEl = document.getElementById('cpu-' + i);
+  if (cpuEl) cpuEl.textContent = cpu > 0 ? fmt(cpu) + '/' + esc(db.materials[i].recipeUnit||'unit') : '—';
+  debouncedSave();
+}
+
+function deleteMaterialFromPrices(i) {
+  const m = db.materials[i];
+  if (!confirm(`Remove "${m.name}" from your materials list?`)) return;
+  const id = m.id;
+  db.materials.splice(i, 1);
+  db.products.forEach(p => p.bom = p.bom.filter(b => b.matId !== id));
+  saveData();
+  renderPrices();
+}
+
+function qtyToggle(i, val) {
+  db.materials[i].purchaseQty = val;
+  debouncedSave();
+  renderPrices();
+}
+
+let _pricesSavedTimer;
+function priceUpdate(i, val) {
+  db.materials[i].purchasePrice = val;
+  const cpu = matCostPerUnit(db.materials[i]);
+  const cpuEl = document.getElementById('cpu-' + i);
+  if (cpuEl) cpuEl.textContent = cpu > 0 ? fmt(cpu) + '/' + esc(db.materials[i].recipeUnit||'unit') : '—';
+  debouncedSave();
+  // Show saved confirmation
+  const saved = el('prices-saved');
+  saved.style.display = 'block';
+  clearTimeout(_pricesSavedTimer);
+  _pricesSavedTimer = setTimeout(() => saved.style.display='none', 2000);
+}
+
+// ─── Cloud Sync (Firebase) ────────────────────────────────
+let _fbApp = null, _fbDb = null, _fbPath = null, _fbListener = null;
+
+function setSyncStatus(state, text) {
+  const dot  = el('sync-dot'), txt = el('sync-text'), lbl = el('sync-label');
+  lbl.style.display = 'inline-flex';
+  lbl.style.alignItems = 'center';
+  dot.className = 'sync-dot ' + state;
+  txt.textContent = text || { synced:'Synced', syncing:'Syncing…', error:'Sync error', offline:'Not connected' }[state];
+}
+
+function showCloudSetup() {
+  const saved = _loadFbConfig();
+  if (saved) {
+    el('firebase-config-input').value = JSON.stringify(saved.config, null, 2);
+    el('firebase-workspace').value    = saved.workspace;
+    el('disconnect-btn').style.display = 'inline-flex';
+  }
+  el('cloud-overlay').classList.add('show');
+}
+function closeCloudSetup() { el('cloud-overlay').classList.remove('show'); el('cloud-error').style.display='none'; }
+
+function _loadFbConfig() {
+  try { return JSON.parse(localStorage.getItem('cpi_firebase') || 'null'); } catch { return null; }
+}
+
+function connectCloud() {
+  const raw = el('firebase-config-input').value.trim();
+  const workspace = el('firebase-workspace').value.trim().replace(/[^a-zA-Z0-9_-]/g,'');
+  if (!workspace) { _cloudErr('Please enter a Workspace ID.'); return; }
+  let config;
+  try { config = JSON.parse(raw); } catch { _cloudErr('Config is not valid JSON. Copy it exactly from Firebase.'); return; }
+  if (!config.databaseURL) { _cloudErr('Missing databaseURL — make sure you enabled Realtime Database and copied the full config.'); return; }
+  localStorage.setItem('cpi_firebase', JSON.stringify({ config, workspace }));
+  closeCloudSetup();
+  _initFirebase(config, workspace);
+}
+
+function disconnectCloud() {
+  if (_fbListener) { _fbDb.ref(_fbPath).off('value', _fbListener); _fbListener = null; }
+  _fbApp = _fbDb = _fbPath = null;
+  localStorage.removeItem('cpi_firebase');
+  el('sync-label').style.display = 'none';
+  el('disconnect-btn').style.display = 'none';
+  closeCloudSetup();
+}
+
+function _cloudErr(msg) {
+  const e = el('cloud-error');
+  e.textContent = msg; e.style.display = 'block';
+}
+
+function _initFirebase(config, workspace) {
+  try {
+    if (_fbApp) { try { _fbApp.delete(); } catch {} }
+    _fbApp  = firebase.initializeApp(config, 'cpi_' + Date.now());
+    _fbDb   = firebase.database(_fbApp);
+    _fbPath = 'workspaces/' + workspace + '/data';
+    setSyncStatus('syncing');
+    // Pull once on connect, then listen for remote changes
+    _fbListener = _fbDb.ref(_fbPath).on('value', snap => {
+      const remote = snap.val();
+      if (remote && typeof remote === 'object') {
+        db = remote;
+        saveData(true); // persist locally, skip re-push
+        if (activePage === 'dashboard') renderDashboard();
+        setSyncStatus('synced');
+      } else {
+        // Nothing in cloud yet — push local data up
+        _fbPush();
+      }
+    }, err => { setSyncStatus('error', 'Sync error'); console.error(err); });
+    el('cloud-btn').textContent = '☁️ Cloud Settings';
+  } catch(e) { setSyncStatus('error', 'Connect failed'); console.error(e); }
+}
+
+function _fbPush() {
+  if (!_fbDb || !_fbPath) return;
+  setSyncStatus('syncing');
+  _fbDb.ref(_fbPath).set(db)
+    .then(() => setSyncStatus('synced'))
+    .catch(() => setSyncStatus('error', 'Sync error'));
+}
+
+// Override saveData to also push to Firebase
+const _localSave = saveData;
+saveData = function(localOnly) {
+  localStorage.setItem('cpi_db', JSON.stringify(db));
+  if (!localOnly && _fbDb) _fbPush();
+};
+
+// ─── Init ─────────────────────────────────────────────────
+patchMaterials();
+seedProducts();
+renderNav();
+renderDashboard();
+const _savedFb = _loadFbConfig();
+if (_savedFb) _initFirebase(_savedFb.config, _savedFb.workspace);
+</script>
+</body>
+</html>
